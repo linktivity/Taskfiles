@@ -15,7 +15,7 @@ vars:
   # deployment variables
   PROJECT:
     sh: basename $(pwd)
-  HELM_CHART: ../helm-charts/cloudrun-service
+  HELM_CHART: oci://asia-northeast1-docker.pkg.dev/lkty-core-s-dev/charts/cloudrun-service
   HELM_CHART_VERSION: 0.1.0
 
 tasks:
