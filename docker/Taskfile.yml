@@ -1,0 +1,63 @@
+version: "3"
+
+vars:
+  ENV: dev
+  TIMEZONE: Asia/Tokyo
+  REPONAME:
+    sh: basename $(pwd)
+  IMAGE_REPO: |
+    {{- if eq .ENV "stg" "prod" -}}
+      asia-northeast1-docker.pkg.dev/lkty-core-s-prod/images/{{ .REPONAME }}
+    {{- else -}}
+      asia-northeast1-docker.pkg.dev/lkty-core-s-dev/images/{{ .REPONAME }}
+    {{- end -}}
+  IMAGE_TAG_SUFFIX: "{{ if .IMAGE_TAG_SUFFIX }}-{{ .IMAGE_TAG_SUFFIX }}{{ else if .GIT_CHANGES -}} -dirty {{- end }}"
+  IMAGE_TAG: "{{ default (print .GIT_VERSION .IMAGE_TAG_SUFFIX) .IMAGE_TAG }}"
+  IMAGE: '{{default (print .IMAGE_REPO ":" .IMAGE_TAG) .IMAGE}}'
+  DOCKER_FILE: Dockerfile
+
+tasks:
+  prepare:
+    desc: Prepare the docker engine
+    internal: true
+    cmds:
+      - |
+        BUILDX_INSTANCE=$(docker buildx ls | grep docker-container | awk '{print $1}' | sed 's/\*//g' | head -n 1)
+        if [ -z "$BUILDX_INSTANCE" ]; then
+          docker buildx create --use
+        else
+          docker buildx use $BUILDX_INSTANCE
+        fi
+      - echo -n "auth with artifact registry..."
+      - gcloud --quiet auth configure-docker asia-northeast1-docker.pkg.dev > /dev/null 2>&1
+      - echo "done."
+    silent: true
+
+  build:
+    aliases:
+      - build_push
+    desc: Build the docker image if it does not exist remotely, if BUILD is set to true, it will always build.
+    status:
+      - test "$BUILD" != true
+      # check if image is on remote registry
+      - docker manifest inspect {{.IMAGE}} > /dev/null 2>&1 || exit 1
+    deps: [prepare]
+    cmds:
+      - |
+        docker buildx build \
+        --file {{.DOCKER_FILE}} \
+        # --platform linux/amd64,linux/arm64 \
+        --platform linux/amd64 \
+        --tag {{.IMAGE}} \
+        --build-arg GIT_VERSION={{.GIT_VERSION}} \
+        --build-arg NETRC="{{.NETRC}}" \
+        --cache-from type=registry,ref={{.IMAGE_REPO}}:cache \
+        --cache-to type=registry,ref={{.IMAGE_REPO}}:cache,mode=max \
+        --output type=registry,ref={{.IMAGE}} \
+        .
+    vars:
+      NETRC:
+        sh: echo -n $(cat ~/.netrc)
+    env:
+      DOCKER_BUILDKIT: 1
+      DOCKER_CLI_EXPERIMENTAL: enabled

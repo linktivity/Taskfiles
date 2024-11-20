@@ -1,0 +1,183 @@
+version: "3"
+
+vars:
+  TIMEZONE: Asia/Tokyo
+  TIMESTAMP:
+    sh: git show -s --format=%cI $(git rev-parse --short HEAD)
+  GIT_TIMESTAMP: '{{ dateInZone "20060102" (mustToDate "2006-01-02T15:04:05-07:00" .TIMESTAMP) .TIMEZONE }}'
+  GIT_VERSION:
+    sh: git describe --exact-match --tags $(git rev-parse --short HEAD) 2>/dev/null || git rev-parse --short HEAD
+  GIT_CHANGES:
+    sh: git status . --porcelain
+  DIST:
+    sh: echo $(pwd)/dist
+
+  # deployment variables
+  PROJECT:
+    sh: basename $(pwd)
+  HELM_CHART: ../helm-charts/cloudrun-service
+  HELM_CHART_VERSION: 0.1.0
+
+tasks:
+  debug:
+    desc: Check if the environment is ready for deployment.
+    cmds:
+      - echo "Checking environment readiness..."
+      - echo "Environment {{ .ENV }}"
+      - echo "Target {{ .TARGET }}"
+      - echo "Timestamp {{ .GIT_TIMESTAMP }}"
+      - echo "Version {{ .GIT_VERSION }}"
+      - echo "Project {{ .PROJECT }}"
+      - echo "Cloud Run Project ID {{ .CLOUDRUN_PROJECTID }}"
+      - echo "Cloud Run Zone {{ .CLOUD_ZONE }}"
+      - echo "Dist {{ .DIST }}"
+    # silent: true
+
+  list:
+    desc: List the services ready for deployment.
+    cmds:
+      - ls -d1 deploy/{{ .TARGET }}/{{ .ENV }}/*/ | xargs -n 1 basename | tr '\n' ' ' | sed 's/ $//'
+    # silent: true
+
+  deploy:
+    desc: Deploy service(s) to designated environment.
+    deps:
+      - task: deploy:check
+    cmds:
+      - task: docker:build
+        vars:
+          DOCKER_FILE: ./Dockerfile
+      - task: deploy:prepare
+      - task: deploy:loop
+        vars:
+          SERVICES:
+            sh: |
+              svc=`echo {{ .SVC }} | xargs`
+              if [ "$svc" = "@all" ]; then 
+                task list ENV={{ .ENV }} TARGET={{ .TARGET }}
+              else
+                echo -n "$svc"
+              fi
+    # silent: true
+
+  deploy:check:
+    desc: Check before deployment.
+    cmds:
+      # check if .SVC is valid
+      - |
+        if [ -z "{{ .SVC }}" ]; then 
+          echo "No services to deploy. Available services are:"
+          task list ENV={{.ENV}} TARGET={{.TARGET}}
+          echo ""
+          exit 1
+        elif [ "{{ .SVC }}" != "@all" ]; then
+          for svc in {{ .SVC }}; do
+            if [ ! -d "deploy/{{ .TARGET }}/{{ .ENV }}/$svc" ]; then
+              echo "Service $svc does not exist."
+              echo "Available services are:"
+              task list ENV={{.ENV}} TARGET={{.TARGET}}
+              echo ""
+              exit 1
+            fi
+          done
+        fi
+    # silent: true
+    internal: true
+
+  deploy:prepare:
+    desc: Prepare the environment for deployment.
+    cmds:
+      - echo -n "Preparing environment for deployment..."
+      - task: helm:install:prepare
+      - echo "done."
+    # silent: true
+    internal: true
+
+  deploy:loop:
+    desc: Start the deployment for each service.
+    deps:
+      - for: { var: SERVICES, split: " " }
+        task: helm:install:single
+        vars:
+          SERVICE: "{{ .ITEM }}"
+    cmds:
+      - echo "----------"
+      - echo "Service(s) [{{ .SERVICES }}] deployed successfully to {{ .ENV }} environment in {{ .CLOUDRUN_PROJECTID }} project."
+      - task: clean
+    # silent: true
+    internal: true
+
+  helm:install:prepare:
+    desc: Prepare the environment for deployment.
+    cmds:
+      - |
+        if gcloud secrets describe {{ .PROJECT }}-common --project={{ .CLOUDRUN_PROJECTID }} --quiet > /dev/null 2>&1; then
+          echo "Secret {{ .PROJECT }}-common already exists.";
+        else
+          echo "Creating secret {{ .PROJECT }}-common...";
+          gcloud secrets create {{ .PROJECT }}-common --project={{ .CLOUDRUN_PROJECTID }} --replication-policy="automatic" --quiet;
+        fi
+      - gcloud secrets versions add {{ .PROJECT }}-common --project={{ .CLOUDRUN_PROJECTID }} --data-file=./deploy/{{ .TARGET }}/{{ .ENV }}/common.yaml
+      - echo "done."
+    # silent: true
+    internal: true
+
+  helm:install:single:
+    desc: Deploy a service in full according to the parameters in values.
+    cmds:
+      - echo "Deploying {{ .SERVICE }}..."
+      - |
+        helm template {{ .SERVICE }} \
+        --namespace {{ .ENV }} \
+        --set-file commonConfig=deploy/{{ .TARGET }}/{{ .ENV }}/common.yaml \
+        --set project={{ .PROJECT }} \
+        --set projectPrefix={{ .TARGET }} \
+        --values ./deploy/{{ .TARGET }}/{{ .ENV }}/values.yaml \
+        --values ./deploy/{{ .TARGET }}/{{ .ENV }}/{{ .SERVICE }}/values.yaml \
+        {{ .HELM_CHART }} --version {{ .HELM_CHART_VERSION }} \
+        --output-dir ./dist/{{ .SERVICE }} > /dev/null
+      - gcloud run services replace ./dist/{{ .SERVICE }}/cloudrun-service/templates/service.yaml --region={{ .CLOUDRUN_LOCATION }} --project={{ .CLOUDRUN_PROJECTID }} --dry-run
+      # - gcloud run services set-iam-policy {{ .SERVICE }} policy.yaml --region={{ .CLOUDRUN_LOCATION }}
+    # silent: true
+    internal: true
+
+  rollback:
+    desc: Rollback to the previous versions.
+    cmds:
+      - task: rollback:loop
+        vars:
+          SERVICES:
+            sh: |
+              svc=`echo {{ .SVC }} | xargs`
+              if [ "$svc" = "@all" ]; then 
+                task list ENV={{ .ENV }} TARGET={{ .TARGET }}
+              else
+                echo -n "$svc"
+              fi
+    # silent: true
+
+  rollback:loop:
+    desc: Rollback the services to the previous versions.
+    deps:
+      - for: { var: SERVICES, split: " " }
+        task: rollback:single
+        vars:
+          SERVICE: "{{ .ITEM }}"
+    # silent: true
+    internal: true
+
+  rollback:single:
+    desc: Rollback a single service to the previous version.
+    cmds:
+      - echo "Rolling back {{ .SERVICE }}..."
+      - gcloud run services update-traffic {{ .SERVICE }} --to-latest=no --region={{ .CLOUDRUN_LOCATION }} --project={{ .CLOUDRUN_PROJECTID }}
+    # silent: true
+    internal: true
+
+  clean:
+    desc: Clean up temp files .
+    cmds:
+      - echo "Cleaning up temp files..."
+      - rm -rf ./dist
+      - echo "done."
+    # silent: true
