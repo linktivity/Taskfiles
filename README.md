@@ -6,5 +6,8 @@ To use these taskfiles, include them in your repo's taskfile like below:
 
 ```yaml
 includes:
-  docker: https://
+  kubernetes: https://raw.githubusercontent.com/linktivity/Taskfiles/refs/heads/master/kubernetes/Taskfile.yml
+  cloudrun: https://raw.githubusercontent.com/linktivity/Taskfiles/refs/heads/master/cloudrun/Taskfile.yml
+  docker: https://raw.githubusercontent.com/linktivity/Taskfiles/refs/heads/master/docker/Taskfile.yml
+  ...
 ```
