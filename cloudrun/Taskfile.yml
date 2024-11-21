@@ -1,5 +1,8 @@
 version: "3"
 
+includes:
+  docker: ../docker/
+
 vars:
   TIMEZONE: Asia/Tokyo
   TIMESTAMP:
@@ -11,6 +14,8 @@ vars:
     sh: git status . --porcelain
   DIST:
     sh: echo $(pwd)/dist
+  ENV: dev
+  CLOUDRUN_LOCATION: asia-northeast1
 
   # deployment variables
   PROJECT:
@@ -28,16 +33,19 @@ tasks:
       - echo "Timestamp {{ .GIT_TIMESTAMP }}"
       - echo "Version {{ .GIT_VERSION }}"
       - echo "Project {{ .PROJECT }}"
+      - echo "Image Repository {{ .IMAGE_REPO }}"
+      - echo "Image Tag {{ .IMAGE_TAG }}"
+      - echo "Image {{ .IMAGE }}"
       - echo "Cloud Run Project ID {{ .CLOUDRUN_PROJECTID }}"
       - echo "Cloud Run Zone {{ .CLOUD_ZONE }}"
       - echo "Dist {{ .DIST }}"
-    # silent: true
+    silent: true
 
   list:
     desc: List the services ready for deployment.
     cmds:
       - ls -d1 deploy/{{ .TARGET }}/{{ .ENV }}/*/ | xargs -n 1 basename | tr '\n' ' ' | sed 's/ $//'
-    # silent: true
+    silent: true
 
   deploy:
     desc: Deploy service(s) to designated environment.
@@ -54,11 +62,11 @@ tasks:
             sh: |
               svc=`echo {{ .SVC }} | xargs`
               if [ "$svc" = "@all" ]; then 
-                task list ENV={{ .ENV }} TARGET={{ .TARGET }}
+                ls -d1 deploy/{{ .TARGET }}/{{ .ENV }}/*/ | xargs -n 1 basename | tr '\n' ' ' | sed 's/ $//'
               else
                 echo -n "$svc"
               fi
-    # silent: true
+    silent: true
 
   deploy:check:
     desc: Check before deployment.
@@ -67,7 +75,7 @@ tasks:
       - |
         if [ -z "{{ .SVC }}" ]; then 
           echo "No services to deploy. Available services are:"
-          task list ENV={{.ENV}} TARGET={{.TARGET}}
+          ls -d1 deploy/{{ .TARGET }}/{{ .ENV }}/*/ | xargs -n 1 basename | tr '\n' ' ' | sed 's/ $//'
           echo ""
           exit 1
         elif [ "{{ .SVC }}" != "@all" ]; then
@@ -75,13 +83,13 @@ tasks:
             if [ ! -d "deploy/{{ .TARGET }}/{{ .ENV }}/$svc" ]; then
               echo "Service $svc does not exist."
               echo "Available services are:"
-              task list ENV={{.ENV}} TARGET={{.TARGET}}
+              ls -d1 deploy/{{ .TARGET }}/{{ .ENV }}/*/ | xargs -n 1 basename | tr '\n' ' ' | sed 's/ $//'
               echo ""
               exit 1
             fi
           done
         fi
-    # silent: true
+    silent: true
     internal: true
 
   deploy:prepare:
@@ -90,7 +98,7 @@ tasks:
       - echo -n "Preparing environment for deployment..."
       - task: helm:install:prepare
       - echo "done."
-    # silent: true
+    silent: true
     internal: true
 
   deploy:loop:
@@ -104,7 +112,7 @@ tasks:
       - echo "----------"
       - echo "Service(s) [{{ .SERVICES }}] deployed successfully to {{ .ENV }} environment in {{ .CLOUDRUN_PROJECTID }} project."
       - task: clean
-    # silent: true
+    silent: true
     internal: true
 
   helm:install:prepare:
@@ -119,7 +127,7 @@ tasks:
         fi
       - gcloud secrets versions add {{ .PROJECT }}-common --project={{ .CLOUDRUN_PROJECTID }} --data-file=./deploy/{{ .TARGET }}/{{ .ENV }}/common.yaml
       - echo "done."
-    # silent: true
+    silent: true
     internal: true
 
   helm:install:single:
@@ -130,15 +138,18 @@ tasks:
         helm template {{ .SERVICE }} \
         --namespace {{ .ENV }} \
         --set-file commonConfig=deploy/{{ .TARGET }}/{{ .ENV }}/common.yaml \
+        --set image.repository={{ .IMAGE_REPO }} \
+        --set image.tag={{ .IMAGE_TAG }} \
         --set project={{ .PROJECT }} \
         --set projectPrefix={{ .TARGET }} \
+        --set projectId={{ .CLOUDRUN_PROJECTID }} \
         --values ./deploy/{{ .TARGET }}/{{ .ENV }}/values.yaml \
         --values ./deploy/{{ .TARGET }}/{{ .ENV }}/{{ .SERVICE }}/values.yaml \
         {{ .HELM_CHART }} --version {{ .HELM_CHART_VERSION }} \
         --output-dir ./dist/{{ .SERVICE }} > /dev/null
-      - gcloud run services replace ./dist/{{ .SERVICE }}/cloudrun-service/templates/service.yaml --region={{ .CLOUDRUN_LOCATION }} --project={{ .CLOUDRUN_PROJECTID }} --dry-run
+      - gcloud run services replace ./dist/{{ .SERVICE }}/cloudrun-service/templates/service.yaml --region={{ .CLOUDRUN_LOCATION }} --project={{ .CLOUDRUN_PROJECTID }}
       # - gcloud run services set-iam-policy {{ .SERVICE }} policy.yaml --region={{ .CLOUDRUN_LOCATION }}
-    # silent: true
+    silent: true
     internal: true
 
   rollback:
@@ -154,7 +165,7 @@ tasks:
               else
                 echo -n "$svc"
               fi
-    # silent: true
+    silent: true
 
   rollback:loop:
     desc: Rollback the services to the previous versions.
@@ -163,7 +174,7 @@ tasks:
         task: rollback:single
         vars:
           SERVICE: "{{ .ITEM }}"
-    # silent: true
+    silent: true
     internal: true
 
   rollback:single:
@@ -171,7 +182,7 @@ tasks:
     cmds:
       - echo "Rolling back {{ .SERVICE }}..."
       - gcloud run services update-traffic {{ .SERVICE }} --to-latest=no --region={{ .CLOUDRUN_LOCATION }} --project={{ .CLOUDRUN_PROJECTID }}
-    # silent: true
+    silent: true
     internal: true
 
   clean:
@@ -180,4 +191,4 @@ tasks:
       - echo "Cleaning up temp files..."
       - rm -rf ./dist
       - echo "done."
-    # silent: true
+    silent: true

@@ -6,7 +6,9 @@ vars:
   REPONAME:
     sh: basename $(pwd)
   IMAGE_REPO: |
-    {{- if eq .ENV "stg" "prod" -}}
+    {{- if ne .CLOUDRUN_PROJECTID "" -}}
+      asia-northeast1-docker.pkg.dev/{{ .CLOUDRUN_PROJECTID }}/images/{{ .REPONAME }}
+    {{- else if eq .ENV "stg" "prod" -}}
       asia-northeast1-docker.pkg.dev/lkty-core-s-prod/images/{{ .REPONAME }}
     {{- else -}}
       asia-northeast1-docker.pkg.dev/lkty-core-s-dev/images/{{ .REPONAME }}
@@ -51,8 +53,8 @@ tasks:
         --tag {{.IMAGE}} \
         --build-arg GIT_VERSION={{.GIT_VERSION}} \
         --build-arg NETRC="{{.NETRC}}" \
-        --cache-from type=registry,ref={{.IMAGE_REPO}}:cache \
-        --cache-to type=registry,ref={{.IMAGE_REPO}}:cache,mode=max \
+        --cache-from type=registry,ref={{.IMAGE_REPO}}:latest \
+        --cache-to type=registry,ref={{.IMAGE_REPO}}:latest,mode=max \
         --output type=registry,ref={{.IMAGE}} \
         .
     vars:
@@ -61,3 +63,4 @@ tasks:
     env:
       DOCKER_BUILDKIT: 1
       DOCKER_CLI_EXPERIMENTAL: enabled
+    silent: true
