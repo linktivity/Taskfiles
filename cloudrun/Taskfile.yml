@@ -125,7 +125,15 @@ tasks:
           echo "Creating secret {{ .PROJECT }}-common...";
           gcloud secrets create {{ .PROJECT }}-common --project={{ .CLOUDRUN_PROJECTID }} --replication-policy="automatic" --quiet;
         fi
-      - gcloud secrets versions add {{ .PROJECT }}-common --project={{ .CLOUDRUN_PROJECTID }} --data-file=./deploy/{{ .TARGET }}/{{ .ENV }}/common.yaml
+      - |
+        CURRENT_HASH=$(gcloud secrets versions access latest --secret={{ .PROJECT }}-common --project={{ .CLOUDRUN_PROJECTID }} 2>/dev/null | sha256sum | awk '{print $1}' || echo "")
+        NEW_HASH=$(sha256sum ./deploy/{{ .TARGET }}/{{ .ENV }}/common.yaml | awk '{print $1}')
+        if [ "$CURRENT_HASH" = "$NEW_HASH" ]; then
+          echo "No changes detected in ./deploy/{{ .TARGET }}/{{ .ENV }}/common.yaml. Skipping update.";
+        else
+          echo "Updating secret version for {{ .PROJECT }}-common...";
+          gcloud secrets versions add {{ .PROJECT }}-common --project={{ .CLOUDRUN_PROJECTID }} --data-file=./deploy/{{ .TARGET }}/{{ .ENV }}/common.yaml
+        fi
     silent: true
     internal: true
 
