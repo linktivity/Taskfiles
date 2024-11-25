@@ -22,6 +22,7 @@ vars:
   KUBECLUSTER_CLUSTERNAME:
     sh: echo {{ .KUBECONTEXT }} | cut -d '_' -f 4
   HELM_CHART: oci://asia-northeast1-docker.pkg.dev/lkty-core-s-dev/charts/common-service
+  HELM_CHART_VERSION: '{{ .HELM_CHART_VERSION | default "0.1.4" }}'
 
 tasks:
   debug:
