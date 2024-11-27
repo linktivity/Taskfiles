@@ -1,7 +1,7 @@
 version: "3"
 
 includes:
-  docker: https://storage.googleapis.com/bucket-linktivity-misc/DevOps/Taskfiles/master/docker/Taskfile.yml
+  docker: https://storage.googleapis.com/bucket-linktivity-misc/DevOps/Taskfiles/master/docker/
 
 vars:
   TIMEZONE: Asia/Tokyo
