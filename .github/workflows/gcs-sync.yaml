@@ -44,7 +44,7 @@ jobs:
       - name: Determine GCS Path
         id: determine-path
         run: |
-          echo "GCS_PATH=${{ env.BUCKET_NAME }}/DevOps/Taskfiles/${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "GCS_PATH=gs://${{ env.BUCKET_NAME }}/DevOps/Taskfiles/${{ github.ref_name }}" >> $GITHUB_ENV
         shell: bash
 
       - name: Sync all directories to GCS
