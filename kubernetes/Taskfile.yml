@@ -1,5 +1,8 @@
 version: "3"
 
+includes:
+  docker: https://storage.googleapis.com/bucket-linktivity-misc/DevOps/Taskfiles/master/docker/Taskfile.yml
+
 vars:
   TIMEZONE: Asia/Tokyo
   TIMESTAMP:
