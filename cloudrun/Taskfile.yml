@@ -155,8 +155,12 @@ tasks:
         --values ./deploy/{{ .TARGET }}/{{ .ENV }}/{{ .SERVICE }}/values.yaml \
         {{ .HELM_CHART }} --version {{ .HELM_CHART_VERSION }} \
         --output-dir ./dist/{{ .SERVICE }} > /dev/null
-      - gcloud run services replace ./dist/{{ .SERVICE }}/cloudrun-service/templates/service.yaml --region={{ .CLOUDRUN_LOCATION }} --project={{ .CLOUDRUN_PROJECTID }}
-      - gcloud run services set-iam-policy {{ .SERVICE }}-{{ .ENV }} ./dist/{{ .SERVICE }}/cloudrun-service/templates/policy.yaml --region={{ .CLOUDRUN_LOCATION }} --project={{ .CLOUDRUN_PROJECTID }} --quiet
+      - |
+        {
+          SERVICE_NAME=$(grep -A 1 "metadata:" ./dist/{{ .SERVICE }}/cloudrun-service/templates/service.yaml | grep "name:" | awk '{print $2}')
+          gcloud run services replace ./dist/{{ .SERVICE }}/cloudrun-service/templates/service.yaml --region={{ .CLOUDRUN_LOCATION }} --project={{ .CLOUDRUN_PROJECTID }}
+          gcloud run services set-iam-policy $SERVICE_NAME ./dist/{{ .SERVICE }}/cloudrun-service/templates/policy.yaml --region={{ .CLOUDRUN_LOCATION }} --project={{ .CLOUDRUN_PROJECTID }} --quiet
+        }
     silent: true
     internal: true
 
