@@ -53,7 +53,7 @@ jobs:
             if [ -d "$dir" ]; then
               dir_name=$(basename "$dir")
               echo "Syncing $dir_name to $GCS_PATH/$dir_name..."
-              gsutil -m rsync -r "./$dir_name" "$GCS_PATH/$dir_name"
+              gsutil -m -h "Cache-Control:no-store" rsync -r "./$dir_name" "$GCS_PATH/$dir_name"
             fi
           done
         env:
