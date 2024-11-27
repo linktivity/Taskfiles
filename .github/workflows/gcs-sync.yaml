@@ -1,0 +1,60 @@
+name: GCS Sync
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "*"
+  workflow_dispatch: 
+
+
+env:
+  PROJECT_ID: "lkty-core-s-prod"
+  PROJECT_NUMBER: "884500212459"
+  BUCKET_NAME: "bucket-linktivity-misc"
+
+jobs:
+  sync-to-gcs:
+    name: Sync Files to GCS
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          project_id: '${{ env.PROJECT_ID }}'
+          token_format: 'access_token'
+          workload_identity_provider: 'projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-oidc-pool/providers/github-actions'
+          service_account: 'infra-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
+
+      - name: 'Set up gcloud'
+        uses: 'google-github-actions/setup-gcloud@v1'
+        with:
+          project_id: '${{ env.PROJECT_ID }}'
+
+      - name: Determine GCS Path
+        id: determine-path
+        run: |
+          echo "GCS_PATH=${{ env.BUCKET_NAME }}/DevOps/Taskfiles/${{ github.ref_name }}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Sync all directories to GCS
+        run: |
+          for dir in */; do
+            if [ -d "$dir" ]; then
+              dir_name=$(basename "$dir")
+              echo "Syncing $dir_name to $GCS_PATH/$dir_name..."
+              gsutil -m rsync -r "./$dir_name" "$GCS_PATH/$dir_name"
+            fi
+          done
+        env:
+          GCS_PATH: ${{ env.GCS_PATH }}
